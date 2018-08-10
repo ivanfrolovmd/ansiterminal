@@ -10,20 +10,17 @@ import scala.util.matching.Regex
 
 final class Ansi private (private val buf: Vector[Char] = Vector.empty) {
 
-  def ++(other: Ansi): Ansi = new Ansi(this.buf ++ other.buf)
-
   def a(block: Ansi => Ansi): Ansi = when(condition = true)(block)
   def a(other: Ansi): Ansi         = this ++ other
   def a(value: => Any): Ansi       = append(value.toString)
 
   def newLine(n: Int = 1): Ansi = append("".padTo(n, '\n'))
 
-  def when(condition: Boolean)(block: Ansi => Ansi): Ansi = if (condition) block(this) else this
+  def up(delta: Int = 1): Ansi    = if (delta > 0) appendCsi('A', delta.toString) else appendNoop()
+  def down(delta: Int = 1): Ansi  = if (delta > 0) appendCsi('B', delta.toString) else appendNoop()
+  def right(delta: Int = 1): Ansi = if (delta > 0) appendCsi('C', delta.toString) else appendNoop()
+  def left(delta: Int = 1): Ansi  = if (delta > 0) appendCsi('D', delta.toString) else appendNoop()
 
-  def up(delta: Int = 1): Ansi                 = if (delta > 0) appendCsi('A', delta.toString) else appendNoop()
-  def down(delta: Int = 1): Ansi               = if (delta > 0) appendCsi('B', delta.toString) else appendNoop()
-  def right(delta: Int = 1): Ansi              = if (delta > 0) appendCsi('C', delta.toString) else appendNoop()
-  def left(delta: Int = 1): Ansi               = if (delta > 0) appendCsi('D', delta.toString) else appendNoop()
   def moveToNextLine(delta: Int = 1): Ansi     = if (delta > 0) appendCsi('E', delta.toString) else appendNoop()
   def moveToPreviousLine(delta: Int = 1): Ansi = if (delta > 0) appendCsi('F', delta.toString) else appendNoop()
   def moveToRelativeLine(delta: Int = 0): Ansi = delta match {
@@ -34,17 +31,13 @@ final class Ansi private (private val buf: Vector[Char] = Vector.empty) {
   def moveToColumn(column: Int): Ansi = if (column >= 0) appendCsi('G', (column + 1).toString) else appendNoop()
   def moveTo(row: Int, column: Int): Ansi =
     if (row >= 0 && column >= 0) appendCsi('H', s"${row + 1};${column + 1}") else appendNoop()
-  def moveTo(position: Product2[Int, Int]): Ansi   = moveTo(position._1, position._2)
+  def moveTo(position: Product2[Int, Int]): Ansi = moveTo(position._1, position._2)
+
   def eraseScreen(kind: ScreenEraseKind): Ansi     = appendCsi('J', kind.v)
   def eraseLine(kind: LineEraseKind = ToEnd): Ansi = appendCsi('K', kind.v)
-  def scrollUp(rows: Int): Ansi                    = if (rows > 0) appendCsi('S', rows.toString) else appendNoop()
-  def scrollDown(rows: Int): Ansi                  = if (rows > 0) appendCsi('T', rows.toString) else appendNoop()
 
-  def saveCursorPosition(): Ansi    = appendCsi('s')
-  def restoreCursorPosition(): Ansi = appendCsi('u')
-  def requestCursorPosition(): Ansi = appendCsi('n', "6")
-
-  def requestDeviceStatusReport(): Ansi = appendCsi('n', "5")
+  def scrollUp(rows: Int): Ansi   = if (rows > 0) appendCsi('S', rows.toString) else appendNoop()
+  def scrollDown(rows: Int): Ansi = if (rows > 0) appendCsi('T', rows.toString) else appendNoop()
 
   def fg(color: Color, bright: Boolean = false): Ansi =
     appendCsi('m', ((if (bright) 60 else 0) + 30 + color.ix).toString)
@@ -52,6 +45,7 @@ final class Ansi private (private val buf: Vector[Char] = Vector.empty) {
     appendCsi('m', ((if (bright) 60 else 0) + 40 + color.ix).toString)
   def colors(fg: Color, fgBright: Boolean, bg: Color, bgBright: Boolean): Ansi =
     appendCsi('m', s"${(if (fgBright) 60 else 0) + 30 + fg.ix};${(if (bgBright) 60 else 0) + 40 + bg.ix}")
+
   def bold(): Ansi               = appendCsi('m', "1")
   def boldOff(): Ansi            = appendCsi('m', "22")
   def italic(): Ansi             = appendCsi('m', "3")
@@ -64,10 +58,20 @@ final class Ansi private (private val buf: Vector[Char] = Vector.empty) {
   def inverseOff(): Ansi         = appendCsi('m', "27")
   def resetAllAttributes(): Ansi = appendCsi('m', "0")
 
+  def saveCursorPosition(): Ansi    = appendCsi('s')
+  def restoreCursorPosition(): Ansi = appendCsi('u')
+
+  def requestDeviceStatusReport(): Ansi = appendCsi('n', "5")
+  def requestCursorPosition(): Ansi     = appendCsi('n', "6")
+
   def showCursor(): Ansi       = privateOn(25)
   def hideCursor(): Ansi       = privateOff(25)
   def bracketedModeOn(): Ansi  = privateOn(2004)
   def bracketedModeOff(): Ansi = privateOff(2004)
+
+  def ++(other: Ansi): Ansi = new Ansi(this.buf ++ other.buf)
+
+  def when(condition: Boolean)(block: Ansi => Ansi): Ansi = if (condition) block(this) else this
 
   override lazy val toString: String = buf.mkString
   lazy val printableLength: Int      = CsiRegex.replaceAllIn(toString, "").length
